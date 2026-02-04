@@ -1,189 +1,72 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8">
-  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-  <title>Wayquest</title>
-  <link rel="shortcut icon" href="TemplateData/favicon.ico">
-  <link rel="stylesheet" href="TemplateData/style.css">
-  <!-- Удалите VK Bridge из head, он загружается в другом месте -->
-</head>
-<body>
-  <div id="unity-container">
-    <canvas id="unity-canvas" width=960 height=600 tabindex="-1"></canvas>
-    <div id="unity-loading-bar">
-      <div id="unity-logo"></div>
-      <div id="unity-progress-bar-empty">
-        <div id="unity-progress-bar-full"></div>
-      </div>
-    </div>
-    <div id="unity-warning"></div>
-  </div>
+// ======================= ФУНКЦИИ ДЛЯ UNITY (ВАШ КОД, ДОПОЛНЕННЫЙ) =======================
+// Функция проверки доступности рекламы (ваш код)
+function checkAdsAvailable() {
+    if (!window.vkBridge) {
+        console.warn("VK Bridge не загружен для проверки рекламы");
+        return Promise.resolve(false);
+    }
+    return window.vkBridge.send('VKWebAppCheckNativeAds', { ad_format: 'reward' })
+        .then(data => {
+            return data.result; // true если реклама доступна
+        })
+        .catch(err => {
+            console.error("VKAd check error:", err);
+            return false;
+        });
+}
 
-  <script>
-    // Проверяем, запущено ли в VK Mini Apps
-    const isVK = window.location.href.includes('vk.com') || 
-                 window.location.href.includes('vk-apps.com');
-
-    let vkBridge = null;
+// Глобальные функции, которые вызывает Unity (ваш код, дополненный защитой)
+window.ShowRewardedAdForRevive = function () {
+    console.log("ShowRewardedAdForRevive called");
     
-    if (isVK) {
-      // Загружаем VK Bridge только если в VK
-      const script = document.createElement('script');
-      script.src = 'https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js';
-      script.onload = function() {
-        vkBridge = window.vkBridge;
-        initVKFeatures();
-      };
-      document.head.appendChild(script);
-    } else {
-      // Режим тестирования вне VK
-      console.log('Running outside VK - using test mode');
-      initTestMode();
-    }
-
-    function initVKFeatures() {
-      vkBridge.send('VKWebAppInit');
-      
-      // Показываем баннер (только в VK)
-      setTimeout(() => {
-        vkBridge.send('VKWebAppShowBannerAd', {
-          banner_location: 'bottom'
-        }).catch(err => {
-          console.log('Banner not available:', err);
-        });
-      }, 3000);
-    }
-
-    function initTestMode() {
-      // Симулируем VK Bridge для тестирования
-      window.vkBridge = {
-        send: function(method, params) {
-          console.log('Mock VK Bridge:', method, params);
-          return new Promise((resolve) => {
-            // Симулируем успешный ответ для тестов
-            setTimeout(() => {
-              resolve({ result: true });
-            }, 100);
-          });
-        }
-      };
-      vkBridge = window.vkBridge;
-    }
-
-    // Глобальные функции для Unity
-    function ShowRewardedAdForRevive() {
-      if (!vkBridge) {
-        console.log('VK Bridge not available');
-        if (window.unityInstance) {
-          window.unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_success');
-        }
+    // 1. Проверяем готовность Unity
+    if (!window.unityInstance) {
+        console.error("Unity не готова. Отмена показа рекламы.");
         return;
-      }
-      
-      vkBridge.send('VKWebAppShowNativeAds', { ad_format: 'reward' })
-        .then(data => {
-          if (data.result && window.unityInstance) {
-            window.unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_success');
-          }
-        })
-        .catch(err => {
-          console.error('Rewarded ad error:', err);
-          if (window.unityInstance) {
-            window.unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_fail');
-          }
-        });
     }
-
-    function ShowRewardedAdForBonus() {
-      if (!vkBridge) {
-        console.log('VK Bridge not available');
-        if (window.unityInstance) {
-          window.unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_success');
-        }
-        return;
-      }
-      
-      vkBridge.send('VKWebAppShowNativeAds', { ad_format: 'reward' })
-        .then(data => {
-          if (data.result && window.unityInstance) {
-            window.unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_success');
-          }
-        })
-        .catch(err => {
-          console.error('Rewarded ad error:', err);
-          if (window.unityInstance) {
-            window.unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_fail');
-          }
-        });
-    }
-
-    // Экспортируем функции для глобального доступа
-    window.ShowRewardedAdForRevive = ShowRewardedAdForRevive;
-    window.ShowRewardedAdForBonus = ShowRewardedAdForBonus;
-  </script>
-
-  <script>
-    var container = document.querySelector("#unity-container");
-    var canvas = document.querySelector("#unity-canvas");
-    var loadingBar = document.querySelector("#unity-loading-bar");
-    var progressBarFull = document.querySelector("#unity-progress-bar-full");
-    var warningBanner = document.querySelector("#unity-warning");
-
-    function unityShowBanner(msg, type) {
-      console.log('Unity Banner:', msg, type);
-    }
-
-    var buildUrl = "Build";
-    var loaderUrl = buildUrl + "/wayquest.loader.js";
-    var config = {
-      dataUrl: buildUrl + "/wayquest.data",
-      frameworkUrl: buildUrl + "/wayquest.framework.js",
-      codeUrl: buildUrl + "/wayquest.wasm",
-      streamingAssetsUrl: "StreamingAssets",
-      companyName: "YourCompany",
-      productName: "Wayquest",
-      productVersion: "1.0",
-      showBanner: unityShowBanner,
-    };
-
-    // Мобильная адаптация
-    if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-      var meta = document.createElement('meta');
-      meta.name = 'viewport';
-      meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
-      document.getElementsByTagName('head')[0].appendChild(meta);
-      container.className = "unity-mobile";
-    }
-
-    loadingBar.style.display = "block";
-
-    var script = document.createElement("script");
-    script.src = loaderUrl;
-    script.onload = () => {
-      createUnityInstance(canvas, config, (progress) => {
-        progressBarFull.style.width = 100 * progress + "%";
-      }).then((instance) => {
-        window.unityInstance = instance;
-        loadingBar.style.display = "none";
-        console.log('Unity loaded successfully');
-        
-        // Тестируем связь с Unity
+    
+    // 2. Проверяем доступность VK Bridge
+    if (!window.vkBridge) {
+        console.warn("VK Bridge недоступен. Симулируем успех для тестов.");
+        // Для тестирования вне VK: симулируем успешный показ
         setTimeout(() => {
-          if (instance) {
-            instance.SendMessage('GameManager', 'OnWebGLReady');
-          }
-        }, 1000);
-      }).catch((message) => {
-        console.error('Unity load error:', message);
-        alert('Failed to load game: ' + message);
-      });
-    };
-    script.onerror = (error) => {
-      console.error('Failed to load Unity loader:', error);
-      alert('Failed to load game resources. Please check your connection.');
-    };
-    document.body.appendChild(script);
-  </script>
-</body>
-</html>
+            if (window.unityInstance) {
+                window.unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_success');
+            }
+        }, 100);
+        return;
+    }
+    
+    // 3. Ваш основной код с проверкой доступности
+    checkAdsAvailable().then(available => {
+        if (available) {
+            window.vkBridge.send('VKWebAppShowNativeAds', { ad_format: 'reward' })
+                .then(data => {
+                    if (data.result && window.unityInstance) {
+                        window.unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_success');
+                    } else if (window.unityInstance) {
+                        window.unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_fail');
+                    }
+                })
+                .catch(err => {
+                    console.error("VKAd error:", err);
+                    if (window.unityInstance) {
+                        window.unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_fail');
+                    }
+                });
+        } else {
+            console.log("Rewarded ads not available");
+            if (window.unityInstance) {
+                window.unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_fail');
+            }
+        }
+    });
+};
+
+// Функция для бонуса (дублирует логику, но можно изменить)
+window.ShowRewardedAdForBonus = function () {
+    console.log("ShowRewardedAdForBonus called");
+    // Просто вызываем ту же функцию, если логика идентична
+    window.ShowRewardedAdForRevive();
+};
+// ======================= КОНЕЦ ФУНКЦИЙ ДЛЯ UNITY =======================
