@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <title>Wayquest</title>
+  <link rel="shortcut icon" href="TemplateData/favicon.ico">
+  <link rel="stylesheet" href="TemplateData/style.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <script src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js"></script>
+</head>
+<body>
+  <div id="unity-container">
+    <canvas id="unity-canvas" width=960 height=600 tabindex="-1"></canvas>
+    <div id="unity-loading-bar">
+      <div id="unity-logo"></div>
+      <div id="unity-progress-bar-empty">
+        <div id="unity-progress-bar-full"></div>
+      </div>
+    </div>
+    <div id="unity-warning"> </div>
+  </div>
+
+  <script>
+    vkBridge.send('VKWebAppInit');
+
+    // Функция показа баннера
+    function showBanner() {
+      vkBridge.send('VKWebAppShowBannerAd', {
+        banner_location: 'bottom'
+      }).then((data) => { 
+        if (data.result) {
+          console.log("Banner is shown");
+        }
+      }).catch((error) => {
+        console.log("No banner available:", error);
+        setTimeout(() => {
+            console.log("Reopening banner after user closed it");
+            showBanner();
+        }, 10000);
+      });
+    }
+    showBanner();
+
+    // Функция проверки доступности рекламы
+    function checkAdsAvailable() {
+      return vkBridge.send('VKWebAppCheckNativeAds', { ad_format: 'reward' })
+        .then(data => {
+          return data.result; // true если реклама доступна
+        })
+        .catch(err => {
+          console.error("VKAd check error:", err);
+          return false;
+        });
+    }
+
+    // Глобальные функции для вызова из Unity
+    function ShowRewardedAdForRevive() {
+      checkAdsAvailable().then(available => {
+        if (available) {
+          vkBridge.send('VKWebAppShowNativeAds', { ad_format: 'reward' })
+            .then(data => {
+              if (data.result) {
+                unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_success');
+              } else {
+                unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_fail');
+              }
+            })
+            .catch(err => {
+              console.error("VKAd error:", err);
+              unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_fail');
+            });
+        } else {
+          console.log("Rewarded ads not available");
+          unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_fail');
+        }
+      });
+    }
+
+    function ShowRewardedAdForBonus() {
+      checkAdsAvailable().then(available => {
+        if (available) {
+          vkBridge.send('VKWebAppShowNativeAds', { ad_format: 'reward' })
+            .then(data => {
+              if (data.result) {
+                unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_success');
+              } else {
+                unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_fail');
+              }
+            })
+            .catch(err => {
+              console.error("VKAd error:", err);
+              unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_fail');
+            });
+        } else {
+          console.log("Rewarded ads not available");
+          unityInstance.SendMessage('AdManager', 'OnAdResult', 'reward_fail');
+        }
+      });
+    }
+  </script>
+
+  <script>
+    window.addEventListener("load", function () {
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("ServiceWorker.js");
+      }
+    });
+
+    var container = document.querySelector("#unity-container");
+    var canvas = document.querySelector("#unity-canvas");
+    var loadingBar = document.querySelector("#unity-loading-bar");
+    var progressBarFull = document.querySelector("#unity-progress-bar-full");
+    var warningBanner = document.querySelector("#unity-warning");
+
+    function unityShowBanner(msg, type) {
+      function updateBannerVisibility() {
+        warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
+      }
+      var div = document.createElement('div');
+      div.innerHTML = msg;
+      warningBanner.appendChild(div);
+      if (type == 'error') div.style = 'background: red; padding: 10px;';
+      else {
+        if (type == 'warning') div.style = 'background: yellow; padding: 10px;';
+        setTimeout(function () {
+          warningBanner.removeChild(div);
+          updateBannerVisibility();
+        }, 5000);
+      }
+      updateBannerVisibility();
+    }
+
+    var buildUrl = "Build";
+    var loaderUrl = buildUrl + "/wayquest.loader.js";
+    var config = {
+      dataUrl: buildUrl + "/wayquest.data",
+      frameworkUrl: buildUrl + "/wayquest.framework.js",
+      codeUrl: buildUrl + "/wayquest.wasm",
+      streamingAssetsUrl: "StreamingAssets",
+      productName: "Wayquest",
+      productVersion: "1.0",
+      showBanner: unityShowBanner,
+    };
+
+    if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+      var meta = document.createElement('meta');
+      meta.name = 'viewport';
+      meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
+      document.getElementsByTagName('head')[0].appendChild(meta);
+    }
+
+    loadingBar.style.display = "block";
+
+    let unityInstance = null;
+
+    var script = document.createElement("script");
+    script.src = loaderUrl;
+    script.onload = () => {
+      createUnityInstance(canvas, config, (progress) => {
+        progressBarFull.style.width = 100 * progress + "%";
+      }).then((instance) => {
+        unityInstance = instance;
+        loadingBar.style.display = "none";
+      }).catch((message) => {
+        alert(message);
+      });
+    };
+    document.body.appendChild(script);
+  </script>
+</body>
+</html>
