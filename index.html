@@ -1,4 +1,163 @@
-// ======================= ФУНКЦИИ ДЛЯ UNITY (ВАШ КОД, ДОПОЛНЕННЫЙ) =======================
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <title>Wayquest</title>
+  <link rel="shortcut icon" href="TemplateData/favicon.ico">
+  <link rel="stylesheet" href="TemplateData/style.css">
+</head>
+<body>
+  <div id="unity-container" class="unity-mobile">
+    <canvas id="unity-canvas" width=960 height=600 tabindex="-1"></canvas>
+    <div id="unity-loading-bar">
+      <div id="unity-logo"></div>
+      <div id="unity-progress-bar-empty">
+        <div id="unity-progress-bar-full"></div>
+      </div>
+    </div>
+    <div id="unity-warning"></div>
+  </div>
+
+  <script>
+    // ======================= КОНФИГУРАЦИЯ UNITY =======================
+    var buildUrl = "Build";
+    var loaderUrl = buildUrl + "/wayquest.loader.js";
+    var unityConfig = {
+      dataUrl: buildUrl + "/wayquest.data",
+      frameworkUrl: buildUrl + "/wayquest.framework.js",
+      codeUrl: buildUrl + "/wayquest.wasm",
+      streamingAssetsUrl: "StreamingAssets",
+      companyName: "YourCompany",
+      productName: "Wayquest",
+      productVersion: "1.0",
+      showBanner: function(msg, type) { console.log('Unity Banner:', msg, type); },
+    };
+    // ======================= КОНЕЦ КОНФИГУРАЦИИ =======================
+
+    // Глобальные переменные
+    window.vkBridge = null; // Будет доступен глобально для функций рекламы
+    window.unityInstance = null; // Сюда сохранится экземпляр Unity
+
+    // ======================= ОСНОВНАЯ ЛОГИКА ЗАПУСКА =======================
+    // 1. Определяем среду
+    const isVK = window.location.href.includes('vk.com') || 
+                 window.location.href.includes('vk-apps.com');
+
+    // 2. Функция для загрузки и инициализации Unity (главная цель)
+    function startUnityLoader() {
+      console.log('Starting Unity loader...');
+      
+      var container = document.querySelector("#unity-container");
+      var canvas = document.querySelector("#unity-canvas");
+      var loadingBar = document.querySelector("#unity-loading-bar");
+      var progressBarFull = document.querySelector("#unity-progress-bar-full");
+
+      loadingBar.style.display = "block";
+
+      var script = document.createElement("script");
+      script.src = loaderUrl;
+      script.onload = () => {
+        createUnityInstance(canvas, unityConfig, (progress) => {
+          progressBarFull.style.width = 100 * progress + "%";
+        }).then((instance) => {
+          window.unityInstance = instance;
+          loadingBar.style.display = "none";
+          console.log('Unity успешно загружена!');
+          
+          // Уведомляем игру о готовности
+          setTimeout(() => {
+            if (instance) {
+              instance.SendMessage('GameManager', 'OnWebGLReady');
+            }
+          }, 1000);
+        }).catch((message) => {
+          console.error('Ошибка загрузки Unity:', message);
+          alert('Не удалось загрузить игру: ' + message);
+        });
+      };
+      script.onerror = (error) => {
+        console.error('Не удалось загрузить загрузчик Unity:', error);
+        alert('Ошибка загрузки ресурсов игры. Проверьте подключение.');
+      };
+      document.body.appendChild(script);
+    }
+
+    // 3. Функция для обработки VK Bridge (последовательный шаг)
+    function initVKEnvironment() {
+      return new Promise((resolve) => {
+        console.log('Попытка загрузки VK Bridge...');
+        
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js';
+        
+        script.onload = () => {
+          if (window.vkBridge) {
+            console.log('VK Bridge загружен.');
+            // Пробуем инициализировать, но не блокируемся надолго
+            window.vkBridge.send('VKWebAppInit', {})
+              .then(() => {
+                console.log('VKWebAppInit успешен.');
+                // Показ баннера можно оставить здесь, если он критичен
+                setTimeout(() => {
+                  window.vkBridge.send('VKWebAppShowBannerAd', { banner_location: 'bottom' })
+                    .catch(err => console.log('Баннер недоступен:', err));
+                }, 3000);
+                resolve(true); // Успех
+              })
+              .catch(e => {
+                console.warn('VKWebAppInit не удался, но Bridge доступен:', e);
+                resolve(true); // Все равно разрешаем, мост есть
+              });
+          } else {
+            console.warn('VK Bridge не найден после загрузки скрипта.');
+            resolve(false); // Переходим к Unity без VK
+          }
+        };
+        
+        script.onerror = () => {
+          console.warn('Не удалось загрузить скрипт VK Bridge.');
+          resolve(false); // Переходим к Unity без VK
+        };
+        
+        document.head.appendChild(script);
+      });
+    }
+
+    // 4. Точка входа: запускаем правильную последовательность
+    if (isVK) {
+      console.log('Обнаружена среда VK. Инициализируем...');
+      
+      // Даем на инициализацию VK Bridge 4 секунды максимум
+      const vkInitTimeout = new Promise(resolve => setTimeout(() => {
+        console.log('Таймаут инициализации VK. Запускаем Unity.');
+        resolve(false);
+      }, 4000));
+      
+      // Кто завершится раньше: инициализация VK или таймаут
+      Promise.race([initVKEnvironment(), vkInitTimeout])
+        .then(() => {
+          // ВСЕГДА запускаем Unity, независимо от результата VK
+          startUnityLoader();
+        });
+        
+    } else {
+      console.log('Внешний запуск (не VK). Используем тестовый режим.');
+      // Симулируем VK Bridge для внешнего тестирования функций
+      window.vkBridge = {
+        send: function(method, params) {
+          console.log('[Тест] VK Bridge:', method, params);
+          return new Promise((resolve) => {
+            setTimeout(() => resolve({ result: true }), 100);
+          });
+        }
+      };
+      // Сразу запускаем Unity
+      startUnityLoader();
+    }
+    // ======================= КОНЕЦ ОСНОВНОЙ ЛОГИКИ =======================
+
+    // ======================= ФУНКЦИИ ДЛЯ UNITY (ВАШ КОД, ДОПОЛНЕННЫЙ) =======================
 // Функция проверки доступности рекламы (ваш код)
 function checkAdsAvailable() {
     if (!window.vkBridge) {
@@ -70,3 +229,15 @@ window.ShowRewardedAdForBonus = function () {
     window.ShowRewardedAdForRevive();
 };
 // ======================= КОНЕЦ ФУНКЦИЙ ДЛЯ UNITY =======================
+
+
+    // Мобильная адаптация (выполняется сразу)
+    if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+      var meta = document.createElement('meta');
+      meta.name = 'viewport';
+      meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
+      document.getElementsByTagName('head')[0].appendChild(meta);
+    }
+  </script>
+</body>
+</html>
